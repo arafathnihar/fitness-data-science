@@ -1,0 +1,231 @@
+---
+title: "Analyzing Fitness"
+subtitle: "Unveiling Trends and Insights from Personal Workout Data"
+---
+
+# Packages used 
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(janitor)
+library(knitr)
+library(calendR)
+library(ggplot2)
+library(jsonlite)
+library(rvest)
+library(tsibble)
+```
+
+# Data Collection method
+
+::: {#fig-app layout-ncol=2}
+
+![[Strong App workout traking](https://www.strong.app)](strong-app.png){#fig-strong width=87%}
+
+![[lyfta.app exercises meta data](https://www.lyfta.app/exercises)](lyfta.png){#fig-lyfta}
+:::
+
+
+
+```{r warning=FALSE, message=FALSE}
+df <- read_csv('strong.csv') |>
+  mutate(id = row_number()) |>
+  clean_names() |>
+  select(where( ~ !all(is.na(.x))))
+df |> head() |> kable()
+```
+
+```{r warning=FALSE, message=FALSE}
+df_info <- read_csv('workout-info.csv') 
+df_info |> head() |> kable()
+```
+
+```{r eval=FALSE}
+get_video_url <- function(link){
+  jsn <- read_html(link) |> 
+    html_nodes('head > script') |> 
+    html_text2() |> 
+    as_tibble() |> 
+    head(1) |> 
+    pull(value) |> 
+    fromJSON()
+  
+  list(url = jsn$contentUrl, file = str_split(jsn$contentUrl, '/',simplify = TRUE)[7])
+}
+
+df_info <- df_info |> 
+  filter(grepl('lyfta', link, fixed = TRUE)) |> 
+  rowwise() |> 
+  mutate(video = list(get_video_url(link))) |> 
+  ungroup() |> 
+  unnest_wider(video)
+
+write_csv(df_info, 'df_info-video.csv')
+
+```
+
+```{r warning=FALSE, message=FALSE}
+df_info <- read_csv('df_info-video.csv')
+df_info |> head() |> kable()
+```
+
+
+
+```{r eval=FALSE}
+
+get_exercise_profile <- function(link) {
+  values <- read_html(link) |> 
+    html_nodes('div.exerciseDetails_detailRow__x2yQT') |> 
+    html_nodes('span.exerciseDetails_value__1GURN') |> 
+    html_text()   
+  lyfta_exercise <- read_html(link) |> 
+    html_nodes('#__next > div > div > div > div:nth-child(3) > h1') |> 
+    html_text() 
+  list('body_part' = values[1],
+       'equipment' = values[2],
+       'primary_muscles' = values[3],
+       'secondary_muscles' = values[4],
+       'lyfta_exercise' = lyfta_exercise)
+}
+
+df_info <- df_info |> rowwise() |> 
+  mutate(xp = list(get_exercise_profile(link))) |>
+  ungroup() |> 
+  unnest_wider(xp)
+
+write_csv(df_info, 'df_info-xp.csv')
+
+```
+
+```{r warning=FALSE, message=FALSE}
+df_info <- read_csv('df_info-xp.csv')
+df_info |> head() |> kable()
+```
+```{r warning=FALSE, message=FALSE}
+df_full <- df |> left_join(df_info, by = 'exercise_name')
+df_full |> head() |> kable()
+```
+
+```{r warning=FALSE, message=FALSE}
+df_full <- df_full |> mutate(day = date(date))
+from <- "2023-12-01"
+to <- "2024-07-30"
+cal_dates <- seq(as.Date(from), as.Date(to), by = "1 day")
+dates <- df_full |> select(day) |> distinct() |> pull(day)
+calendR(
+  from = from,
+  to = to,
+  weeknames = c("S", "M", "T", "W", "T", "F", "S"),
+  special.days = which(cal_dates %in% dates),
+  special.col = "lightgreen"
+)
+```
+
+```{r warning=FALSE, message=FALSE}
+plot_df <- df_full |>
+  group_by(day, exercise_name) |>
+  mutate(work = weight * reps) |>
+  reframe(work = sum(work), workout_name) |>
+  distinct() |>
+  group_by(exercise_name) |>
+  reframe(day, exercise_name, work, workout_name, n = n()) |>
+  filter(n > 2)
+
+plot_progrss <- function(workout, df = plot_df) {
+  df |>
+    filter(workout_name == workout) |>
+    ggplot(aes(x = day, y = work, color = exercise_name)) +
+    geom_point() +
+    geom_line() +
+    labs(
+      title = paste(workout, " Exercise Over Time"),
+      x = "Date",
+      y = "Volume (Sets x Reps x Weight)",
+      color = "Exercise Name"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none", plot.title = element_text(hjust = 0.5)) +
+    facet_wrap(~ exercise_name, scales = "free", ncol = 2) +
+    annotate(geom = "rect", xmin = as.Date("2024-03-03"), xmax = as.Date("2024-03-09"), ymin = 0, ymax = Inf,
+           fill = "red", alpha = 0.1) +
+    annotate(geom = "rect", xmin = as.Date("2023-12-31"), xmax = as.Date("2024-01-01"), ymin = 0, ymax = Inf,
+           fill = "green", alpha = 0.1)
+  
+}
+
+workouts <- df_full |> distinct(workout_name) |> pull(workout_name)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+plt_height <- function(wrk, df = plot_df) {
+  df |> filter(workout_name == wrk) |> distinct(exercise_name) |> nrow()
+}
+l1 <- plt_height(workouts[1])
+l2 <- plt_height(workouts[2])
+l3 <- plt_height(workouts[3])
+l4 <- plt_height(workouts[4])
+l5 <- plt_height(workouts[5])
+l6 <- plt_height(workouts[6])
+l7 <- plt_height(workouts[7])
+l8 <- plt_height(workouts[8])
+```
+
+```{r, fig.height=l1}
+plot_progrss(workouts[1])
+```
+
+```{r, fig.height=l2}
+plot_progrss(workouts[2])
+```
+
+```{r, fig.height=l3}
+plot_progrss(workouts[3])
+```
+
+```{r, fig.height=l4}
+plot_progrss(workouts[4])
+```
+
+```{r, fig.height=l5}
+plot_progrss(workouts[5])
+```
+
+<!-- ```{r, fig.height=l6} -->
+<!-- #plot_progrss(workouts[6]) -->
+<!-- ``` -->
+
+```{r, fig.height=l7}
+plot_progrss(workouts[7])
+```
+
+```{r, fig.height=l8}
+plot_progrss(workouts[8])
+```
+
+![Before and After](ba.jpg)
+
+```{r warning=FALSE, message=FALSE, figures-side, fig.show="hold", out.width="50%"}
+plot_volume <- function(exercise) {
+  df_full |> 
+    filter(lyfta_exercise == exercise | exercise == 'all') |>
+    select(day, weight, reps) |> 
+    group_by(day) |> 
+    reframe(day, day_vol = sum(weight*reps)) |> 
+    distinct() |> 
+    as_tsibble(index = day) |> 
+    fill_gaps(day_vol = 0) |>
+    ggplot(aes(day, day_vol)) +
+      geom_point() + 
+      geom_linerange(aes(day, ymax=day_vol, ymin=0)) +
+      ggtitle(exercise) +
+        annotate(geom = "rect", xmin = as.Date("2024-03-03"), xmax = as.Date("2024-03-09"), ymin = 0, ymax = Inf,
+           fill = "blue", alpha = 0.1) +
+    annotate(geom = "rect", xmin = as.Date("2023-12-31"), xmax = as.Date("2024-01-01"), ymin = 0, ymax = Inf,
+           fill = "green", alpha = 0.1)+
+    annotate(geom = "rect", xmin = as.Date("2024-03-19"), xmax = as.Date("2024-03-24"), ymin = 0, ymax = Inf,
+           fill = "red", alpha = 0.1)
+}
+plot_volume('all')
+#lapply(df_info$lyfta_exercise, plot_volume)
+```
