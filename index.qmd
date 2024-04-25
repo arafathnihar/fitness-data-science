@@ -3,7 +3,28 @@ title: "Analyzing Fitness"
 subtitle: "Unveiling Trends and Insights from Personal Workout Data"
 ---
 
-# Packages used 
+This project focuses on leveraging workout data from fitness tracking applications to gain insights into exercise effectiveness and optimize fitness routines. By analyzing trends, muscle engagement, and exercise patterns, we aim to provide actionable recommendations for individuals seeking to enhance their fitness journey.
+
+# Libraries Used
+
+The following R libraries were utilized throughout the project for various data manipulation, visualization, and analysis tasks:
+
+- **tidyverse**: A comprehensive collection of R packages for data science, providing tools for data manipulation, visualization, and analysis in a unified framework.
+
+- **janitor**: Simplifies data cleaning tasks by providing functions for cleaning messy data and formatting data frames.
+
+- **calendR**: Provides functionality for working with calendars and date-related tasks in R, enhancing time series analysis capabilities.
+
+- **ggplot2**: A powerful plotting system for creating a wide variety of visualizations with an emphasis on clarity and aesthetics.
+
+- **jsonlite**: Offers tools for reading, writing, and manipulating JSON data in R, facilitating interaction with web APIs and other data sources.
+
+- **rvest**: A web scraping package that allows extracting data from web pages, making it easier to gather data for analysis.
+
+- **tsibble**: Provides a data structure for time series data, along with tools for handling and analyzing time series data efficiently.
+
+These libraries were selected based on their functionality and suitability for the specific requirements of the project, enabling efficient data processing and analysis.
+
 
 ```{r warning=FALSE, message=FALSE}
 library(tidyverse)
@@ -16,48 +37,73 @@ library(rvest)
 library(tsibble)
 ```
 
+
 # Data Collection method
 
-::: {#fig-app layout-ncol=2}
+[Strong App](https://www.strong.app) |  [lyfta.app](https://www.lyfta.app/exercises)
+:-------------------------:|:-------------------------:
+![](strong-app.png) | ![](lyfta.png)
 
-![[Strong App workout traking](https://www.strong.app)](strong-app.png){#fig-strong width=87%}
 
-![[lyfta.app exercises meta data](https://www.lyfta.app/exercises)](lyfta.png){#fig-lyfta}
-:::
+## Source 1: [Strong App](https://www.strong.app) for Workout Tracking
 
+Data for this project was collected from the Strong App, a workout tracking application available on mobile devices. The Strong App was utilized to track workout sessions, including exercises performed, sets, repetitions, and weights used. Each workout session was logged within the app, capturing detailed information about the exercises completed and the corresponding metrics.
+
+## Source 2: [Lyfta.app](https://www.lyfta.app/exercises) for Exercise Metadata
+
+In addition to workout tracking data, exercise metadata was obtained from Lyfta.app. This metadata provided information about various exercises, including the muscle groups targeted, exercise types, and other relevant attributes. By leveraging this metadata, additional context was gained regarding the specific muscle groups worked during each exercise.
+
+
+# Data Cleaning
+
+The workout data underwent the following cleaning process:
+
+1. **Adding Row Numbers**: Each row was assigned a unique identifier.
+
+2. **Standardizing Column Names**: Column names were converted to lowercase and spaces were replaced with underscores for consistency.
+
+3. **Removing Columns with All Missing Values**: Columns containing only missing values were excluded from the dataset.
+
+4. **Previewing the Cleaned Data**: The first few rows of the cleaned dataset were examined to ensure successful cleaning.
 
 
 ```{r warning=FALSE, message=FALSE}
 df <- read_csv('strong.csv') |>
   mutate(id = row_number()) |>
   clean_names() |>
-  select(where( ~ !all(is.na(.x))))
+  select(where(~ !all(is.na(.x))))
 df |> head() |> kable()
 ```
 
 ```{r warning=FALSE, message=FALSE}
-df_info <- read_csv('workout-info.csv') 
+df_info <- read_csv('workout-info.csv')
 df_info |> head() |> kable()
 ```
 
+# Web Scraping
+
+To enhance the workout data with additional metadata, web scraping techniques were employed to extract information about each exercise. The process involved fetching exercise metadata from the Lyfta.app website, including details such as the body part targeted, equipment used, primary and secondary muscles engaged, and the specific Lyfta exercise name.
+
+
 ```{r eval=FALSE}
-get_video_url <- function(link){
-  jsn <- read_html(link) |> 
-    html_nodes('head > script') |> 
-    html_text2() |> 
-    as_tibble() |> 
-    head(1) |> 
-    pull(value) |> 
+get_video_url <- function(link) {
+  jsn <- read_html(link) |>
+    html_nodes('head > script') |>
+    html_text2() |>
+    as_tibble() |>
+    head(1) |>
+    pull(value) |>
     fromJSON()
   
-  list(url = jsn$contentUrl, file = str_split(jsn$contentUrl, '/',simplify = TRUE)[7])
+  list(url = jsn$contentUrl,
+       file = str_split(jsn$contentUrl, '/', simplify = TRUE)[7])
 }
 
-df_info <- df_info |> 
-  filter(grepl('lyfta', link, fixed = TRUE)) |> 
-  rowwise() |> 
-  mutate(video = list(get_video_url(link))) |> 
-  ungroup() |> 
+df_info <- df_info |>
+  filter(grepl('lyfta', link, fixed = TRUE)) |>
+  rowwise() |>
+  mutate(video = list(get_video_url(link))) |>
+  ungroup() |>
   unnest_wider(video)
 
 write_csv(df_info, 'df_info-video.csv')
@@ -70,27 +116,39 @@ df_info |> head() |> kable()
 ```
 
 
+## Data Retrieval and Processing:
+
+1. **Data Retrieval**: A CSV file named 'df_info-video.csv' containing exercise names and corresponding URLs was read into a dataframe named `df_info`.
+
+2. **Web Scraping Function**: A custom function named `get_exercise_profile()` was created to extract exercise metadata from each exercise URL. This function parsed relevant details from the HTML structure of the web page using the `rvest` package in R.
+
+3. **Data Transformation**: The `get_exercise_profile()` function was applied row-wise to the `df_info` dataframe to retrieve metadata for each exercise. The resulting metadata, including body part, equipment, primary and secondary muscles, and Lyfta exercise name, was stored in a list format.
+
+4. **Data Expansion**: The list of exercise metadata was expanded into separate columns using the `unnest_wider()` function, creating a more structured dataframe named `df_info-xp.csv`.
+
 
 ```{r eval=FALSE}
 
 get_exercise_profile <- function(link) {
-  values <- read_html(link) |> 
-    html_nodes('div.exerciseDetails_detailRow__x2yQT') |> 
-    html_nodes('span.exerciseDetails_value__1GURN') |> 
-    html_text()   
-  lyfta_exercise <- read_html(link) |> 
-    html_nodes('#__next > div > div > div > div:nth-child(3) > h1') |> 
-    html_text() 
-  list('body_part' = values[1],
-       'equipment' = values[2],
-       'primary_muscles' = values[3],
-       'secondary_muscles' = values[4],
-       'lyfta_exercise' = lyfta_exercise)
+  values <- read_html(link) |>
+    html_nodes('div.exerciseDetails_detailRow__x2yQT') |>
+    html_nodes('span.exerciseDetails_value__1GURN') |>
+    html_text()
+  lyfta_exercise <- read_html(link) |>
+    html_nodes('#__next > div > div > div > div:nth-child(3) > h1') |>
+    html_text()
+  list(
+    'body_part' = values[1],
+    'equipment' = values[2],
+    'primary_muscles' = values[3],
+    'secondary_muscles' = values[4],
+    'lyfta_exercise' = lyfta_exercise
+  )
 }
 
-df_info <- df_info |> rowwise() |> 
+df_info <- df_info |> rowwise() |>
   mutate(xp = list(get_exercise_profile(link))) |>
-  ungroup() |> 
+  ungroup() |>
   unnest_wider(xp)
 
 write_csv(df_info, 'df_info-xp.csv')
@@ -101,10 +159,35 @@ write_csv(df_info, 'df_info-xp.csv')
 df_info <- read_csv('df_info-xp.csv')
 df_info |> head() |> kable()
 ```
+
+Downloading exercise videos for later use 
+```{r eval=FALSE}
+df_info |>
+  rowwise() |>
+  mutate(down = download.file(url, paste0('mp4/', file)))
+```
+
+
+## Data Integration:
+
+5. **Joining Datasets**: The original workout data dataframe (`df`) was merged with the exercise metadata dataframe (`df_info-xp.csv`) based on the exercise names. This integration combined the workout details with the additional metadata fetched through web scraping.
+
 ```{r warning=FALSE, message=FALSE}
 df_full <- df |> left_join(df_info, by = 'exercise_name')
 df_full |> head() |> kable()
 ```
+
+
+The final dataframe (`df_full`) contains enriched workout data, including exercise metadata retrieved from the Lyfta.app website. This comprehensive dataset enables deeper analysis of workout patterns, muscle engagement, and exercise effectiveness.
+
+This process of web scraping and data integration significantly enhances the depth and insights of the workout dataset, providing valuable context for further analysis and interpretation.
+
+
+# Data Visualization
+## Calendar Heatmap:
+
+The calendar heatmap visually represents the frequency and distribution of workout sessions over time. Each cell on the calendar corresponds to a single day, with days containing workout sessions shaded in light green. This visualization technique allows for a quick and intuitive understanding of workout patterns and trends throughout the specified period.
+
 
 ```{r warning=FALSE, message=FALSE}
 df_full <- df_full |> mutate(day = date(date))
@@ -120,6 +203,23 @@ calendR(
   special.col = "lightgreen"
 )
 ```
+
+### Interpretation:
+
+- **Green Cells**: Days highlighted in green indicate the presence of one or more workout sessions. The intensity of the green color reflects the frequency of workouts on that particular day.
+  
+- **Blank Cells**: Days without recorded workout sessions appear as blank cells, indicating periods of rest or inactivity.
+
+### Insights:
+
+- **Workout Patterns**: Clusters of green cells suggest periods of increased activity, where multiple workout sessions occurred in close succession. These clusters can reveal consistent training patterns or specific days of the week where workouts are more frequent.
+  
+- **Consistency and Gaps**: Sparse areas in the heatmap may indicate days with no recorded workouts. Identifying these gaps can help individuals assess their consistency in training and identify opportunities for improvement.
+
+The calendar heatmap provides a visually appealing and informative representation of workout behavior over time. By highlighting patterns, trends, and gaps in workout frequency, this visualization facilitates informed decision-making and optimization of fitness routines. Analyzing the heatmap can lead to adjustments in training schedules, ensuring consistency and effectiveness in achieving fitness goals.
+
+# Inference
+## Exercise Progress By Schedule 
 
 ```{r warning=FALSE, message=FALSE}
 plot_df <- df_full |>
@@ -144,20 +244,57 @@ plot_progrss <- function(workout, df = plot_df) {
       color = "Exercise Name"
     ) +
     theme_minimal() +
-    theme(legend.position = "none", plot.title = element_text(hjust = 0.5)) +
-    facet_wrap(~ exercise_name, scales = "free", ncol = 2) +
-    annotate(geom = "rect", xmin = as.Date("2024-03-03"), xmax = as.Date("2024-03-09"), ymin = 0, ymax = Inf,
-           fill = "red", alpha = 0.1) +
-    annotate(geom = "rect", xmin = as.Date("2023-12-31"), xmax = as.Date("2024-01-01"), ymin = 0, ymax = Inf,
-           fill = "green", alpha = 0.1)
+    theme(legend.position = "none",
+          plot.title = element_text(hjust = 0.5)) +
+    facet_wrap( ~ exercise_name, scales = "free", ncol = 2) +
+    annotate(
+      geom = "rect",
+      xmin = as.Date("2024-03-03"),
+      xmax = as.Date("2024-03-09"),
+      ymin = 0,
+      ymax = Inf,
+      fill = "red",
+      alpha = 0.1
+    ) +
+    annotate(
+      geom = "rect",
+      xmin = as.Date("2023-12-31"),
+      xmax = as.Date("2024-01-01"),
+      ymin = 0,
+      ymax = Inf,
+      fill = "green",
+      alpha = 0.1
+    )
   
 }
 
-workouts <- df_full |> distinct(workout_name) |> pull(workout_name)
+workouts <- df_full |> 
+  distinct(workout_name) |> 
+  pull(workout_name)
 ```
 
+The following visualization depicts the progress of exercises over time, illustrating the volume of work (sets x reps x weight) performed for each exercise during workout sessions.
 
-```{r warning=FALSE, message=FALSE}
+The plot displays a series of data points and lines representing the volume of work achieved for various exercises over the specified time period. Each point on the graph corresponds to a workout session, with the volume of work calculated as the product of weight lifted and the number of repetitions completed. The lines connecting the points provide a visual indication of the overall progress for each exercise over time.
+
+
+
+### Interpretation:
+- **Color Coding**: Each exercise is represented by a different color, allowing for easy identification and comparison.
+  
+- **Faceted Layout**: Exercises are grouped into separate panels, enabling focused analysis of each exercise's progress.
+
+- **Date Annotations**: Rectangular annotations highlight specific date ranges, providing contextual information about significant events or periods of interest during the observation period.
+
+
+### Insights:
+- **Exercise Trends**: Trends in exercise volume can be observed by tracking changes in the plotted points and lines over time. Increases or decreases in volume may indicate changes in training intensity or focus.
+
+- **Individual Exercise Analysis**: By examining each facet of the plot, specific insights into the progress of individual exercises can be gained. Variations in volume between exercises may highlight areas of strength or areas requiring additional attention.
+
+### Workout Schedule 1: CSA
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
 plt_height <- function(wrk, df = plot_df) {
   df |> filter(workout_name == wrk) |> distinct(exercise_name) |> nrow()
 }
@@ -169,25 +306,28 @@ l5 <- plt_height(workouts[5])
 l6 <- plt_height(workouts[6])
 l7 <- plt_height(workouts[7])
 l8 <- plt_height(workouts[8])
+
 ```
 
-```{r, fig.height=l1}
+```{r, fig.height=l1, echo=FALSE}
 plot_progrss(workouts[1])
 ```
 
-```{r, fig.height=l2}
+```{r, fig.height=l2, echo=FALSE}
 plot_progrss(workouts[2])
 ```
 
-```{r, fig.height=l3}
+```{r, fig.height=l3, echo=FALSE}
 plot_progrss(workouts[3])
 ```
 
-```{r, fig.height=l4}
+### Workout Schedule 2: PPL
+
+```{r, fig.height=l4, echo=FALSE}
 plot_progrss(workouts[4])
 ```
 
-```{r, fig.height=l5}
+```{r, fig.height=l5, echo=FALSE}
 plot_progrss(workouts[5])
 ```
 
@@ -195,37 +335,392 @@ plot_progrss(workouts[5])
 <!-- #plot_progrss(workouts[6]) -->
 <!-- ``` -->
 
-```{r, fig.height=l7}
+```{r, fig.height=l7, echo=FALSE}
 plot_progrss(workouts[7])
 ```
 
-```{r, fig.height=l8}
+```{r, fig.height=l8, echo=FALSE}
 plot_progrss(workouts[8])
 ```
 
-![Before and After](ba.jpg)
+## Exercise Progress By Exercise 
 
-```{r warning=FALSE, message=FALSE, figures-side, fig.show="hold", out.width="50%"}
+The provided visualization presents the cumulative volume of work (sets x reps x weight) performed for your workout sessions over time. Each point on the graph represents the total volume of work completed on a specific day, while the vertical lines extending from the points indicate the range of volumes observed throughout the day.
+
+### Interpretation:
+
+- **Clear Representation**: The use of contrasting dim gray color ensures clarity and easy interpretation of the data points and vertical lines.
+
+- **Date Annotations**: Rectangular annotations highlight specific date ranges, such as significant events or holidays, providing additional context for your workout history.
+
+#### Insights:
+
+- **Monitoring Progress**: By tracking the trend of exercise volume over time, you can assess your progress and consistency in training.
+  
+- **Identifying Peaks and Valleys**: Peaks in the graph signify days of high workout intensity, while valleys indicate periods of lighter training.
+
+This visualization serves as a valuable tool for analyzing your workout volume trends and patterns over time. By understanding your exercise volume fluctuations, you can make informed decisions to adjust your training regimen for optimal results.
+
+```{r warning=FALSE, message=FALSE}
 plot_volume <- function(exercise) {
-  df_full |> 
-    filter(lyfta_exercise == exercise | exercise == 'all') |>
-    select(day, weight, reps) |> 
-    group_by(day) |> 
-    reframe(day, day_vol = sum(weight*reps)) |> 
-    distinct() |> 
-    as_tsibble(index = day) |> 
+  df_full |>
+    filter(lyfta_exercise == exercise |
+             exercise == 'All Exercises') |>
+    select(day, weight, reps) |>
+    group_by(day) |>
+    reframe(day, day_vol = sum(weight * reps)) |>
+    distinct() |>
+    as_tsibble(index = day) |>
     fill_gaps(day_vol = 0) |>
     ggplot(aes(day, day_vol)) +
-      geom_point() + 
-      geom_linerange(aes(day, ymax=day_vol, ymin=0)) +
-      ggtitle(exercise) +
-        annotate(geom = "rect", xmin = as.Date("2024-03-03"), xmax = as.Date("2024-03-09"), ymin = 0, ymax = Inf,
-           fill = "blue", alpha = 0.1) +
-    annotate(geom = "rect", xmin = as.Date("2023-12-31"), xmax = as.Date("2024-01-01"), ymin = 0, ymax = Inf,
-           fill = "green", alpha = 0.1)+
-    annotate(geom = "rect", xmin = as.Date("2024-03-19"), xmax = as.Date("2024-03-24"), ymin = 0, ymax = Inf,
-           fill = "red", alpha = 0.1)
+    geom_point(color = "dimgray") +
+    geom_linerange(aes(day, ymax = day_vol, ymin = 0), color = "dimgray") +
+    ggtitle(exercise) +
+    annotate(
+      geom = "rect",
+      xmin = as.Date("2024-03-03"),
+      xmax = as.Date("2024-03-09"),
+      ymin = 0,
+      ymax = Inf,
+      fill = "blue",
+      alpha = 0.2
+    ) +
+    annotate(
+      geom = "rect",
+      xmin = as.Date("2023-12-31"),
+      xmax = as.Date("2024-01-01"),
+      ymin = 0,
+      ymax = Inf,
+      fill = "green",
+      alpha = 0.2
+    ) +
+    annotate(
+      geom = "rect",
+      xmin = as.Date("2024-03-19"),
+      xmax = as.Date("2024-03-24"),
+      ymin = 0,
+      ymax = Inf,
+      fill = "red",
+      alpha = 0.2
+    ) +
+    labs(title = exercise,
+         x = "Date",
+         y = "Volume (Sets x Reps x Weight)") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          plot.title = element_text(hjust = 0.5))
 }
-plot_volume('all')
-#lapply(df_info$lyfta_exercise, plot_volume)
+plot_volume('All Exercises')
 ```
+
+```{r warning=FALSE, message=FALSE}
+get_gif_path <- function(exercise) {
+  file <- df_info |>
+    filter(lyfta_exercise == exercise) |>
+    distinct(file) |>
+    pull(file)
+  paste0('gif/', file, '.gif')
+}
+```
+
+### EZ Barbell Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('EZ Barbell Curl'))
+plot_volume('EZ Barbell Curl')
+```
+### Incline Bench Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Incline Bench Press'))
+plot_volume('Incline Bench Press')
+```
+### Bench Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Bench Press'))
+plot_volume('Bench Press')
+```
+### Barbell Seated Overhead Triceps Extension
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Barbell Seated Overhead Triceps Extension'))
+plot_volume('Barbell Seated Overhead Triceps Extension')
+```
+### Triceps Pushdown
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Triceps Pushdown'))
+plot_volume('Triceps Pushdown')
+```
+### Barbell Seated Overhead Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Barbell Seated Overhead Press'))
+plot_volume('Barbell Seated Overhead Press')
+```
+### Lateral Raise
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Lateral Raise'))
+plot_volume('Lateral Raise')
+```
+### Barbell Lying Triceps Extension Skull Crusher
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Barbell Lying Triceps Extension Skull Crusher'))
+plot_volume('Barbell Lying Triceps Extension Skull Crusher')
+```
+### Dumbbell Alternate Seated Hammer Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Alternate Seated Hammer Curl'))
+plot_volume('Dumbbell Alternate Seated Hammer Curl')
+```
+### Incline Fly
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Incline Fly'))
+plot_volume('Incline Fly')
+```
+### Rear Lateral Raise
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Rear Lateral Raise'))
+plot_volume('Rear Lateral Raise')
+```
+### Dumbbell Seated Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Seated Curl'))
+plot_volume('Dumbbell Seated Curl')
+```
+### Front Raise
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Front Raise'))
+plot_volume('Front Raise')
+```
+### Standing Behind Neck Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Standing Behind Neck Press'))
+plot_volume('Standing Behind Neck Press')
+```
+### Alternate Biceps Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Alternate Biceps Curl'))
+plot_volume('Alternate Biceps Curl')
+```
+### Dumbbell Alternate Biceps Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Alternate Biceps Curl'))
+plot_volume('Dumbbell Alternate Biceps Curl')
+```
+### Dumbbell Arnold Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Arnold Press'))
+plot_volume('Dumbbell Arnold Press')
+```
+### Dumbbell Bench Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Bench Press'))
+plot_volume('Dumbbell Bench Press')
+```
+### Dumbbell Biceps Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Biceps Curl'))
+plot_volume('Dumbbell Biceps Curl')
+```
+### Dumbbell Seated Shoulder Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Seated Shoulder Press'))
+plot_volume('Dumbbell Seated Shoulder Press')
+```
+### Fly
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Fly'))
+plot_volume('Fly')
+```
+### Hammer Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Hammer Curl'))
+plot_volume('Hammer Curl')
+```
+### Lever Preacher Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Lever Preacher Curl'))
+plot_volume('Lever Preacher Curl')
+```
+### Dumbbell Seated Triceps Extension
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Seated Triceps Extension'))
+plot_volume('Dumbbell Seated Triceps Extension')
+```
+### Dumbbell Standing Triceps Extension
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Standing Triceps Extension'))
+plot_volume('Dumbbell Standing Triceps Extension')
+```
+### Barbell Shrug
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Barbell Shrug'))
+plot_volume('Barbell Shrug')
+```
+### Cable Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Cable Curl'))
+plot_volume('Cable Curl')
+```
+### Lying Hammer Press
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Lying Hammer Press'))
+plot_volume('Lying Hammer Press')
+```
+### Lever Seated Dip
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Lever Seated Dip'))
+plot_volume('Lever Seated Dip')
+```
+### Concentration Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Concentration Curl'))
+plot_volume('Concentration Curl')
+```
+### Barbell Front Raise
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Barbell Front Raise'))
+plot_volume('Barbell Front Raise')
+```
+### Dumbbell Incline Y-Raise
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell Incline Y-Raise'))
+plot_volume('Dumbbell Incline Y-Raise')
+```
+### Cable Pushdown
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Cable Pushdown'))
+plot_volume('Cable Pushdown')
+```
+### Smith Shrug
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Smith Shrug'))
+plot_volume('Smith Shrug')
+```
+### Band face pull
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Band face pull'))
+plot_volume('Band face pull')
+```
+### Cross Body Hammer Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Cross Body Hammer Curl'))
+plot_volume('Cross Body Hammer Curl')
+```
+### Weighted Front Raise
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Weighted Front Raise'))
+plot_volume('Weighted Front Raise')
+```
+### Bent Over Row
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Bent Over Row'))
+plot_volume('Bent Over Row')
+```
+### Cable Hammer Curl
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Cable Hammer Curl'))
+plot_volume('Cable Hammer Curl')
+```
+### Cable Wide-Grip Lat Pulldown
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Cable Wide-Grip Lat Pulldown'))
+plot_volume('Cable Wide-Grip Lat Pulldown')
+```
+### Cable seated row
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Cable seated row'))
+plot_volume('Cable seated row')
+```
+### Dumbbell One Arm Triceps Extension
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Dumbbell One Arm Triceps Extension'))
+plot_volume('Dumbbell One Arm Triceps Extension')
+```
+### One Arm Bent-over Row
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('One Arm Bent-over Row'))
+plot_volume('One Arm Bent-over Row')
+```
+### Pull-up
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Pull-up'))
+plot_volume('Pull-up')
+```
+### Standing One Arm Extension
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Standing One Arm Extension'))
+plot_volume('Standing One Arm Extension')
+```
+### Standing Up Straight Crossovers
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Standing Up Straight Crossovers'))
+plot_volume('Standing Up Straight Crossovers')
+```
+### Barbell Full Squat
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Barbell Full Squat'))
+plot_volume('Barbell Full Squat')
+```
+### Cable Standing Cross-over High Reverse Fly
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Cable Standing Cross-over High Reverse Fly'))
+plot_volume('Cable Standing Cross-over High Reverse Fly')
+```
+### Deadlift
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Deadlift'))
+plot_volume('Deadlift')
+```
+### Lever Total Abdominal Crunch
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Lever Total Abdominal Crunch'))
+plot_volume('Lever Total Abdominal Crunch')
+```
+### Barbell Wide-grip Upright Row
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Barbell Wide-grip Upright Row'))
+plot_volume('Barbell Wide-grip Upright Row')
+```
+### Lever Leg Extension
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Lever Leg Extension'))
+plot_volume('Lever Leg Extension')
+```
+### Lever Seated Calf Raise
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Lever Seated Calf Raise'))
+plot_volume('Lever Seated Calf Raise')
+```
+### Upright Row
+```{r warning=FALSE, message=FALSE}
+knitr::include_graphics(get_gif_path('Upright Row'))
+plot_volume('Upright Row')
+```
+
+# Results
+
+![Before and After](ba.jpg)
+
+
+```{r warning=FALSE, message=FALSE}
+df_full |>
+  group_by(body_part) |>
+  reframe(body_part, vol = sum(weight * reps)) |>
+  distinct() |>
+  drop_na() |>
+  ggplot(aes(x = body_part, y = vol, fill = body_part)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Volume for Each Body Part ",
+       x = "Body Part",
+       y = "Volume (Sets x Reps x Weight)") +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(
+      angle = 90,
+      vjust = 0.5,
+      hjust = 1
+    )
+  )
+```
+
+
+![Before and After](legday.jpg)
