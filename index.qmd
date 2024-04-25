@@ -419,7 +419,7 @@ get_gif_path <- function(exercise) {
     filter(lyfta_exercise == exercise) |>
     distinct(file) |>
     pull(file)
-  paste0('gif/', file, '.gif')
+  paste0('gif4/', file, '.gif')
 }
 ```
 
