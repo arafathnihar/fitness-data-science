@@ -299,25 +299,25 @@ l8 <- plt_height(workouts[8])
 
 ```
 
-```{r, fig.height=l1, echo=FALSE}
+```{r, fig.height=l1, echo=FALSE, warning=FALSE, message=FALSE}
 plot_progrss(workouts[1])
 ```
 
-```{r, fig.height=l2, echo=FALSE}
+```{r, fig.height=l2, echo=FALSE, warning=FALSE, message=FALSE}
 plot_progrss(workouts[2])
 ```
 
-```{r, fig.height=l3, echo=FALSE}
+```{r, fig.height=l3, echo=FALSE, warning=FALSE, message=FALSE}
 plot_progrss(workouts[3])
 ```
 
 ### Workout Schedule 2: PPL
 
-```{r, fig.height=l4, echo=FALSE}
+```{r, fig.height=l4, echo=FALSE, warning=FALSE, message=FALSE}
 plot_progrss(workouts[4])
 ```
 
-```{r, fig.height=l5, echo=FALSE}
+```{r, fig.height=l5, echo=FALSE, warning=FALSE, message=FALSE}
 plot_progrss(workouts[5])
 ```
 
@@ -327,11 +327,11 @@ plot_progrss(workouts[5])
 
 <!-- ``` -->
 
-```{r, fig.height=l7, echo=FALSE}
+```{r, fig.height=l7, echo=FALSE, warning=FALSE, message=FALSE}
 plot_progrss(workouts[7])
 ```
 
-```{r, fig.height=l8, echo=FALSE}
+```{r, fig.height=l8, echo=FALSE, warning=FALSE, message=FALSE}
 plot_progrss(workouts[8])
 ```
 
